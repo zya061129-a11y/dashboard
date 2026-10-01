@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>即時天氣與貓貓資訊看板 | Weather & Cat Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#080c14',
+                        cardBg: 'rgba(15, 23, 42, 0.75)',
+                        cardBorder: 'rgba(255, 255, 255, 0.12)',
+                        accentCat: '#ec4899',
+                        accentWeather: '#3b82f6',
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Chart.js for Weather Trend Visualizations -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+        
+        body {
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background-color: #080c14;
+            color: #f3f4f6;
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* Dynamic Landscape Background Container */
+        #bg-image-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -2;
+            background-size: cover;
+            background-position: center;
+            transition: background-image 1s ease-in-out;
+        }
+
+        /* Dark Glassmorphism Backdrop Overlay */
+        #bg-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: -1;
+            background: linear-gradient(180deg, rgba(8, 12, 20, 0.75) 0%, rgba(8, 12, 20, 0.90) 100%),
+                        radial-gradient(circle at 50% 20%, rgba(15, 23, 42, 0.45) 0%, rgba(8, 12, 20, 0.85) 100%);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        .glass-card {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6);
+        }
+
+        .glass-card:hover {
+            border-color: rgba(255, 255, 255, 0.22);
+        }
+
+        .skeleton {
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 25%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.04) 75%);
+            background-size: 200% 100%;
+            animation: skeleton-loading 1.5s infinite;
+        }
+
+        @keyframes skeleton-loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        /* Hide scrollbar for horizontal Taiwan city pills */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between p-4 md:p-6 lg:p-8 selection:bg-pink-500 selection:text-white">
+
+    <!-- Background Layers -->
+    <div id="bg-image-container"></div>
+    <div id="bg-overlay"></div>
+
+    <div class="max-w-7xl mx-auto w-full space-y-6 relative z-10">
+        
+        <!-- Header & Live Clock Bar with Search -->
+        <header class="glass-card rounded-2xl p-4 md:p-6 space-y-4 transition-all">
+            <div class="flex flex-col lg:flex-row justify-between items-center gap-4">
+                <div class="flex items-center gap-3 w-full lg:w-auto">
+                    <div class="p-3 bg-gradient-to-tr from-blue-600 to-indigo-500 rounded-xl shadow-lg shadow-blue-500/20 shrink-0">
+                        <i data-lucide="layout-dashboard" class="w-6 h-6 text-white"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-xl md:text-2xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-200 to-slate-400">
+                            天氣與喵星人資訊看板
+                        </h1>
+                        <p class="text-xs md:text-sm text-slate-400 font-medium flex items-center gap-2">
+                            <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            即時儀表板 • Live Dashboard
+                        </p>
+                    </div>
+                </div>
+
+                <!-- SEARCH CITY BAR -->
+                <div class="relative w-full lg:max-w-md">
+                    <form id="search-form" onsubmit="handleSearch(event)" class="relative flex items-center">
+                        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 z-10 pointer-events-none"></i>
+                        <input 
+                            type="text" 
+                            id="city-search-input" 
+                            placeholder="搜尋台灣縣市/全球城市 (如: 苗栗, 宜蘭, 東京)..." 
+                            autocomplete="off"
+                            class="w-full bg-slate-900/80 hover:bg-slate-900 border border-slate-700/80 focus:border-blue-500 text-white placeholder-slate-400 text-sm rounded-xl pl-10 pr-24 py-2.5 outline-none transition-all duration-200 shadow-inner"
+                        />
+                        <div class="absolute right-1.5 flex items-center gap-1">
+                            <button type="submit" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition-all shadow-md active:scale-95">
+                                搜尋
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Search Dropdown / Autocomplete Results -->
+                    <div id="search-results" class="hidden absolute top-full left-0 right-0 mt-2 bg-slate-900/95 backdrop-blur-xl border border-slate-700/80 rounded-xl shadow-2xl overflow-hidden z-50 max-h-60 overflow-y-auto">
+                    </div>
+                </div>
+
+                <!-- Date and Clock Badge -->
+                <div class="flex items-center gap-3 bg-slate-900/80 border border-slate-800 px-4 py-2 rounded-xl text-right shrink-0 w-full lg:w-auto justify-between lg:justify-end">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="clock" class="w-4 h-4 text-blue-400"></i>
+                        <button onclick="useCurrentGPS()" title="使用 GPS 自動定位" class="text-xs text-blue-400 hover:underline flex items-center gap-1 bg-blue-500/10 px-2 py-1 rounded border border-blue-500/20">
+                            <i data-lucide="locate-fixed" class="w-3 h-3"></i> GPS
+                        </button>
+                    </div>
+                    <div>
+                        <div id="live-time" class="text-base md:text-lg font-bold font-mono tracking-wider text-white">--:--:--</div>
+                        <div id="live-date" class="text-[11px] text-slate-400">---- 年 -- 月 -- 日</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAIWAN CITIES QUICK SELECTION BAR -->
+            <div class="pt-2 border-t border-slate-800/80 flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+                <span class="text-xs font-semibold text-blue-400 shrink-0 flex items-center gap-1 mr-1">
+                    <i data-lucide="map-pin" class="w-3.5 h-3.5"></i> 台灣縣市快選:
+                </span>
+                <div id="taiwan-cities-container" class="flex items-center gap-1.5 shrink-0">
+                    <!-- Dynamic Taiwan Cities Chips will be populated here -->
+                </div>
+            </div>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- ========================================== -->
+            <!-- LEFT COLUMN: WEATHER DASHBOARD (7 cols)    -->
+            <!-- ========================================== -->
+            <section class="lg:col-span-7 space-y-6">
+
+                <!-- Current Weather Primary Card -->
+                <div class="glass-card rounded-2xl p-6 relative overflow-hidden group">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <div class="flex items-center gap-2 text-slate-300 text-sm font-medium">
+                                <i data-lucide="map-pin" class="w-4 h-4 text-blue-400"></i>
+                                <span id="location-name" class="text-white font-bold">偵測定位中...</span>
+                                <span id="location-badge" class="px-2 py-0.5 text-[10px] bg-blue-500/20 text-blue-300 rounded-full border border-blue-500/30">GPS</span>
+                            </div>
+                            <h2 class="text-2xl font-bold text-white mt-1">目前天氣狀況</h2>
+                        </div>
+                        <button id="refresh-weather-btn" onclick="fetchWeatherData()" title="重新讀取天氣資訊" class="p-2 text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl transition-all active:scale-95">
+                            <i data-lucide="refresh-cw" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+
+                    <!-- Weather Loading Skeleton -->
+                    <div id="weather-loading" class="space-y-4 py-4">
+                        <div class="flex items-center justify-between">
+                            <div class="space-y-2">
+                                <div class="h-12 w-32 skeleton rounded-xl"></div>
+                                <div class="h-5 w-24 skeleton rounded-lg"></div>
+                            </div>
+                            <div class="h-20 w-20 skeleton rounded-full"></div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-3 pt-4">
+                            <div class="h-16 skeleton rounded-xl"></div>
+                            <div class="h-16 skeleton rounded-xl"></div>
+                            <div class="h-16 skeleton rounded-xl"></div>
+                        </div>
+                    </div>
+
+                    <!-- Weather Error State -->
+                    <div id="weather-error" class="hidden p-6 text-center space-y-3 bg-red-500/10 border border-red-500/20 rounded-xl my-2">
+                        <i data-lucide="cloud-off" class="w-10 h-10 text-red-400 mx-auto"></i>
+                        <p id="weather-error-msg" class="text-sm text-red-200">天氣資訊讀取失敗</p>
+                        <button onclick="fetchWeatherData()" class="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-200 border border-red-500/30 rounded-xl text-xs font-semibold transition-all">
+                            重新嘗試
+                        </button>
+                    </div>
+
+                    <!-- Weather Content -->
+                    <div id="weather-content" class="hidden">
+                        <div class="flex flex-col sm:flex-row items-baseline sm:items-center justify-between my-2 gap-4">
+                            <div class="flex items-center gap-4">
+                                <span id="weather-icon" class="text-6xl sm:text-7xl filter drop-shadow-lg">☀️️</span>
+                                <div>
+                                    <div class="flex items-baseline">
+                                        <span id="current-temp" class="text-5xl sm:text-6xl font-extrabold text-white tracking-tight">--</span>
+                                        <span class="text-2xl text-blue-400 font-bold ml-1">°C</span>
+                                    </div>
+                                    <p id="weather-desc" class="text-lg font-semibold text-slate-200 mt-1">--</p>
+                                </div>
+                            </div>
+                            <div class="text-left sm:text-right bg-slate-900/60 p-3 rounded-xl border border-slate-800/80 w-full sm:w-auto">
+                                <p class="text-xs text-slate-400">體感溫度 Feels like</p>
+                                <p class="text-xl font-bold text-slate-100"><span id="apparent-temp">--</span> °C</p>
+                            </div>
+                        </div>
+
+                        <!-- Weather Key Stats Grid -->
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+                            <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800/80">
+                                <div class="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
+                                    <i data-lucide="droplets" class="w-3.5 h-3.5 text-blue-400"></i>
+                                    <span>相對濕度</span>
+                                </div>
+                                <span id="humidity" class="text-lg font-bold text-white">--</span><span class="text-xs text-slate-400 ml-0.5">%</span>
+                            </div>
+
+                            <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800/80">
+                                <div class="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
+                                    <i data-lucide="wind" class="w-3.5 h-3.5 text-teal-400"></i>
+                                    <span>風速</span>
+                                </div>
+                                <span id="wind-speed" class="text-lg font-bold text-white">--</span><span class="text-xs text-slate-400 ml-0.5">km/h</span>
+                            </div>
+
+                            <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800/80">
+                                <div class="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
+                                    <i data-lucide="umbrella" class="w-3.5 h-3.5 text-indigo-400"></i>
+                                    <span>降雨機率</span>
+                                </div>
+                                <span id="precip-prob" class="text-lg font-bold text-white">--</span><span class="text-xs text-slate-400 ml-0.5">%</span>
+                            </div>
+
+                            <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-800/80">
+                                <div class="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
+                                    <i data-lucide="sun" class="w-3.5 h-3.5 text-amber-400"></i>
+                                    <span>最高 / 最低</span>
+                                </div>
+                                <div class="text-sm font-bold text-white">
+                                    <span id="temp-max" class="text-rose-400">--</span> / <span id="temp-min" class="text-blue-400">--</span> °C
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hourly Forecast Chart Card -->
+                <div class="glass-card rounded-2xl p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="trending-up" class="w-5 h-5 text-blue-400"></i>
+                            <h3 class="text-lg font-bold text-white">今日 24 小時氣溫與降雨趨勢</h3>
+                        </div>
+                        <span class="text-xs text-slate-400">Open-Meteo Hourly</span>
+                    </div>
+                    <div class="relative w-full h-56">
+                        <canvas id="hourlyChart"></canvas>
+                    </div>
+                </div>
+
+            </section>
+
+
+            <!-- ========================================== -->
+            <!-- RIGHT COLUMN: CAT GALLERY (5 cols)         -->
+            <!-- ========================================== -->
+            <section class="lg:col-span-5 space-y-6">
+
+                <div class="glass-card rounded-2xl p-6 relative flex flex-col justify-between h-full">
+                    <div>
+                        <!-- Header & Controls -->
+                        <div class="flex justify-between items-center mb-4">
+                            <div class="flex items-center gap-2">
+                                <div class="p-2 bg-pink-500/20 text-pink-400 rounded-lg">
+                                    <i data-lucide="cat" class="w-5 h-5"></i>
+                                </div>
+                                <h2 class="text-xl font-bold text-white">喵星人即時寫真</h2>
+                            </div>
+                            <span class="text-xs bg-pink-500/10 text-pink-300 border border-pink-500/20 px-2.5 py-1 rounded-full font-medium">
+                                The Cat API
+                            </span>
+                        </div>
+
+                        <!-- Progress Bar for Auto Rotation -->
+                        <div class="w-full bg-slate-800/80 rounded-full h-1.5 mb-4 overflow-hidden">
+                            <div id="cat-progress" class="bg-gradient-to-r from-pink-500 to-rose-400 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+
+                        <!-- Cat Image Frame Container -->
+                        <div class="relative aspect-4/3 w-full rounded-xl overflow-hidden bg-slate-900/90 border border-slate-800 shadow-inner group">
+                            
+                            <!-- Cat Skeleton Loading -->
+                            <div id="cat-loading" class="absolute inset-0 skeleton flex items-center justify-center">
+                                <div class="flex flex-col items-center gap-2 text-slate-400">
+                                    <i data-lucide="loader-2" class="w-8 h-8 animate-spin text-pink-500"></i>
+                                    <span class="text-xs font-medium">呼喚貓貓中...</span>
+                                </div>
+                            </div>
+
+                            <!-- Cat Error State -->
+                            <div id="cat-error" class="hidden absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-900/90 z-10">
+                                <i data-lucide="smile-plus" class="w-12 h-12 text-slate-500 mb-2"></i>
+                                <p class="text-sm text-slate-300 font-medium mb-1">貓貓正在休息中 🐾</p>
+                                <p class="text-xs text-slate-500 mb-4">無法載入最新圖片，請再試一次</p>
+                                <button onclick="fetchCatImage(true)" class="px-4 py-2 bg-pink-500 hover:bg-pink-600 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-pink-500/20">
+                                    重試呼喚 🐱
+                                </button>
+                            </div>
+
+                            <!-- Image Element -->
+                            <img id="cat-image" src="" alt="Random Cat" class="w-full h-full object-cover transition-opacity duration-500 opacity-0 group-hover:scale-105 duration-700 ease-out" onload="onCatImageLoaded()" onerror="onCatImageError()" />
+
+                            <!-- Overlay Badges -->
+                            <div class="absolute bottom-3 left-3 right-3 flex justify-between items-center z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                <span id="cat-breed-tag" class="text-[11px] bg-black/70 backdrop-blur-md text-slate-200 px-3 py-1.5 rounded-lg border border-white/10">
+                                    🐾 隨機喵星人
+                                </span>
+                                <div class="flex items-center gap-2">
+                                    <button id="like-btn" onclick="toggleLikeCat()" class="p-2 bg-black/70 hover:bg-pink-500 backdrop-blur-md text-white rounded-lg border border-white/10 transition-all active:scale-90">
+                                        <i data-lucide="heart" class="w-4 h-4"></i>
+                                    </button>
+                                    <a id="download-cat-btn" href="#" target="_blank" download="cat.jpg" class="p-2 bg-black/70 hover:bg-blue-500 backdrop-blur-md text-white rounded-lg border border-white/10 transition-all">
+                                        <i data-lucide="download" class="w-4 h-4"></i>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Cat Info Details -->
+                        <div id="cat-info" class="mt-4 p-3 bg-slate-900/60 rounded-xl border border-slate-800/80 text-xs text-slate-300 min-h-[4rem] flex items-center">
+                            <p class="leading-relaxed text-slate-400 italic">點擊下方按鈕或等待 30 秒自動切換新的貓貓寫真！</p>
+                        </div>
+                    </div>
+
+                    <!-- Action Controls Footer -->
+                    <div class="mt-6 pt-4 border-t border-slate-800/80 flex gap-3">
+                        <button id="next-cat-btn" onclick="fetchCatImage(true)" class="flex-1 py-3 px-4 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 active:scale-98 text-white font-bold rounded-xl shadow-lg shadow-pink-500/20 flex items-center justify-center gap-2 transition-all">
+                            <i data-lucide="sparkles" class="w-4 h-4"></i>
+                            <span>換一張貓貓 🐱</span>
+                        </button>
+                    </div>
+
+                </div>
+
+            </section>
+
+        </main>
+
+
+        <!-- ========================================== -->
+        <!-- FOOTER: DATA SOURCE ATTRIBUTION & LINKS    -->
+        <!-- ========================================== -->
+        <footer class="glass-card rounded-2xl p-4 md:p-6 text-xs text-slate-400 flex flex-col md:flex-row justify-between items-center gap-4 border-t border-slate-800">
+            <div class="flex items-center gap-2">
+                <i data-lucide="database" class="w-4 h-4 text-slate-500"></i>
+                <span>開放資料來源 (Open Data Attributions):</span>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-4 sm:gap-6">
+                <!-- Open Meteo Attribution -->
+                <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 hover:text-blue-400 transition-colors group">
+                    <i data-lucide="cloud-sun" class="w-4 h-4 text-blue-500 group-hover:scale-110 transition-transform"></i>
+                    <span>天氣 API: <strong class="text-slate-300">Open-Meteo</strong></span>
+                    <i data-lucide="external-link" class="w-3 h-3 opacity-60"></i>
+                </a>
+
+                <span class="hidden sm:inline text-slate-700">•</span>
+
+                <!-- The Cat API Attribution -->
+                <a href="https://thecatapi.com/" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 hover:text-pink-400 transition-colors group">
+                    <i data-lucide="cat" class="w-4 h-4 text-pink-500 group-hover:scale-110 transition-transform"></i>
+                    <span>貓貓 API: <strong class="text-slate-300">The Cat API</strong></span>
+                    <i data-lucide="external-link" class="w-3 h-3 opacity-60"></i>
+                </a>
+
+                <span class="hidden sm:inline text-slate-700">•</span>
+
+                <!-- Unsplash Background Source -->
+                <a href="https://unsplash.com/" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 hover:text-emerald-400 transition-colors group">
+                    <i data-lucide="image" class="w-4 h-4 text-emerald-500 group-hover:scale-110 transition-transform"></i>
+                    <span>風景桌布: <strong class="text-slate-300">Unsplash</strong></span>
+                    <i data-lucide="external-link" class="w-3 h-3 opacity-60"></i>
+                </a>
+            </div>
+
+            <div class="text-slate-500 text-[11px]">
+                Designed with Pure HTML/CSS/JS
+            </div>
+        </footer>
+
+    </div>
+
+
+    <script>
+        // =========================================================
+        // TAIWAN MAJOR CITIES & COUNTIES PRESET DATASET
+        // =========================================================
+        const TAIWAN_CITIES = [
+            { name: '基隆市', enName: 'Keelung', lat: 25.1283, lon: 121.7419, searchKey: 'Keelung' },
+            { name: '台北市', enName: 'Taipei', lat: 25.0330, lon: 121.5654, searchKey: 'Taipei' },
+            { name: '新北市', enName: 'New Taipei', lat: 25.0117, lon: 121.4658, searchKey: 'New Taipei' },
+            { name: '桃園市', enName: 'Taoyuan', lat: 24.9936, lon: 121.3010, searchKey: 'Taoyuan' },
+            { name: '新竹市', enName: 'Hsinchu City', lat: 24.8138, lon: 120.9675, searchKey: 'Hsinchu' },
+            { name: '新竹縣', enName: 'Hsinchu County', lat: 24.8387, lon: 121.0077, searchKey: 'Hsinchu County' },
+            { name: '苗栗縣', enName: 'Miaoli', lat: 24.5601, lon: 120.8217, searchKey: 'Miaoli' },
+            { name: '台中市', enName: 'Taichung', lat: 24.1477, lon: 120.6736, searchKey: 'Taichung' },
+            { name: '彰化縣', enName: 'Changhua', lat: 24.0815, lon: 120.5385, searchKey: 'Changhua' },
+            { name: '南投縣', enName: 'Nantou', lat: 23.9037, lon: 120.6859, searchKey: 'Nantou' },
+            { name: '雲林縣', enName: 'Yunlin', lat: 23.7092, lon: 120.4313, searchKey: 'Yunlin' },
+            { name: '嘉義市', enName: 'Chiayi City', lat: 23.4801, lon: 120.4491, searchKey: 'Chiayi' },
+            { name: '嘉義縣', enName: 'Chiayi County', lat: 23.4588, lon: 120.5740, searchKey: 'Chiayi County' },
+            { name: '台南市', enName: 'Tainan', lat: 22.9997, lon: 120.2270, searchKey: 'Tainan' },
+            { name: '高雄市', enName: 'Kaohsiung', lat: 22.6273, lon: 120.3014, searchKey: 'Kaohsiung' },
+            { name: '屏東縣', enName: 'Pingtung', lat: 22.6713, lon: 120.4880, searchKey: 'Pingtung' },
+            { name: '宜蘭縣', enName: 'Yilan', lat: 24.7570, lon: 121.7530, searchKey: 'Yilan' },
+            { name: '花蓮縣', enName: 'Hualien', lat: 23.9871, lon: 121.6015, searchKey: 'Hualien' },
+            { name: '台東縣', enName: 'Taitung', lat: 22.7583, lon: 121.1444, searchKey: 'Taitung' },
+            { name: '澎湖縣', enName: 'Penghu', lat: 23.5711, lon: 119.5793, searchKey: 'Penghu' },
+            { name: '金門縣', enName: 'Kinmen', lat: 24.4493, lon: 118.3766, searchKey: 'Kinmen' },
+            { name: '連江縣', enName: 'Matsu', lat: 26.1505, lon: 119.9499, searchKey: 'Matsu' }
+        ];
+
+        // GLOBAL STATE & CONSTANTS
+        const DEFAULT_LOCATION = TAIWAN_CITIES[1]; // Default Taipei
+        let currentLocation = { ...DEFAULT_LOCATION, name: '台北市 Taipei' };
+        
+        let catProgressInterval = null;
+        const CAT_REFRESH_SECONDS = 30;
+        let catProgressSeconds = 0;
+        let currentCatUrl = '';
+        let hourlyChartInstance = null;
+        let searchDebounceTimeout = null;
+
+        // WMO Weather Code Mapping Table to Icons, Chinese Description & Landscape keywords
+        const WMO_CODES = {
+            0: { desc: '晴朗 Clear', icon: '☀️', keyword: 'sunny landscape nature' },
+            1: { desc: '主要晴朗 Mainly Clear', icon: '🌤️', keyword: 'clear sky mountain' },
+            2: { desc: '多雲 Partly Cloudy', icon: '⛅', keyword: 'cloudy sky landscape' },
+            3: { desc: '陰天 Overcast', icon: '☁️', keyword: 'overcast landscape nature' },
+            45: { desc: '起霧 Foggy', icon: '🌫', keyword: 'foggy forest landscape' },
+            48: { desc: '霧淞 Deposit Rime Fog', icon: '🌫️', keyword: 'misty mountain landscape' },
+            51: { desc: '輕微細雨 Light Drizzle', icon: '🌦', keyword: 'drizzle rain nature' },
+            53: { desc: '細雨 Moderate Drizzle', icon: '🌧️', keyword: 'rainy nature landscape' },
+            55: { desc: '濃密細雨 Dense Drizzle', icon: '🌧️', keyword: 'rainy forest landscape' },
+            61: { desc: '小雨 Slight Rain', icon: '🌧️', keyword: 'rainy city landscape' },
+            63: { desc: '中雨 Moderate Rain', icon: '🌧️', keyword: 'heavy rain landscape' },
+            65: { desc: '大雨 Heavy Rain', icon: '🌧️', keyword: 'stormy landscape' },
+            71: { desc: '輕微降雪 Slight Snow', icon: '❄️', keyword: 'winter snow landscape' },
+            73: { desc: '降雪 Moderate Snow', icon: '❄️', keyword: 'snowy mountain forest' },
+            75: { desc: '強烈降雪 Heavy Snow', icon: '❄️', keyword: 'blizzard snow mountain' },
+            80: { desc: '陣雨 Rain Showers', icon: '🌦️', keyword: 'rain shower nature' },
+            81: { desc: '中度陣雨 Moderate Showers', icon: '🌧️', keyword: 'rainy landscape' },
+            82: { desc: '暴雨 Violent Showers', icon: '⛈️', keyword: 'dark storm landscape' },
+            95: { desc: '雷陣雨 Thunderstorm', icon: '⛈', keyword: 'thunderstorm landscape sky' },
+            96: { desc: '雷陣雨伴隨冰雹 Thunderstorm & Hail', icon: '⛈️', keyword: 'stormy mountain sky' }
+        };
+
+        function renderTaiwanCityChips() {
+            const container = document.getElementById('taiwan-cities-container');
+            container.innerHTML = '';
+
+            TAIWAN_CITIES.forEach((city) => {
+                const button = document.createElement('button');
+                const isSelected = currentLocation.name.includes(city.name);
+                
+                button.className = `px-2.5 py-1 text-xs font-medium rounded-lg transition-all shrink-0 flex items-center gap-1 border ${
+                    isSelected 
+                        ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/20' 
+                        : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border-slate-800 hover:border-slate-700'
+                }`;
+                button.textContent = city.name;
+                button.onclick = () => {
+                    selectTaiwanCity(city);
+                };
+                container.appendChild(button);
+            });
+        }
+
+        function selectTaiwanCity(city) {
+            currentLocation = {
+                lat: city.lat,
+                lon: city.lon,
+                name: `${city.name} Taiwan`,
+                cityName: city.enName || city.name
+            };
+            document.getElementById('location-badge').textContent = "台灣縣市";
+            document.getElementById('city-search-input').value = city.name;
+            renderTaiwanCityChips();
+            fetchWeatherData();
+        }
+
+        // =========================================================
+        // DYNAMIC LANDSCAPE BACKGROUND UPDATER
+        // =========================================================
+        function updateLandscapeBackground(queryKeyword) {
+            const container = document.getElementById('bg-image-container');
+            
+            const cleanQuery = encodeURIComponent(`${queryKeyword || 'landscape nature'}`);
+            const dynamicUrl = `https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1920&q=80`;
+
+            const img = new Image();
+            img.src = dynamicUrl;
+            img.onload = function() {
+                container.style.backgroundImage = `url('${dynamicUrl}')`;
+            };
+            img.onerror = function() {
+                container.style.backgroundImage = `url('https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=1920&q=80')`;
+            };
+        }
+
+        // =========================================================
+        // SEARCH LOCATION LOGIC (Open-Meteo Geocoding API)
+        // =========================================================
+        const searchInput = document.getElementById('city-search-input');
+        const searchResultsEl = document.getElementById('search-results');
+
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            clearTimeout(searchDebounceTimeout);
+
+            if (query.length < 1) {
+                searchResultsEl.classList.add('hidden');
+                searchResultsEl.innerHTML = '';
+                return;
+            }
+
+            searchDebounceTimeout = setTimeout(() => {
+                fetchGeocodingSuggestions(query);
+            }, 300);
+        });
+
+        async function fetchGeocodingSuggestions(query) {
+            // Check local Taiwan preset first
+            const matchedTaiwanCities = TAIWAN_CITIES.filter(c => 
+                c.name.includes(query) || c.enName.toLowerCase().includes(query.toLowerCase())
+            );
+
+            try {
+                const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=zh&format=json`;
+                const res = await fetch(url);
+                const data = await res.json();
+
+                let results = data.results || [];
+
+                // Merge Taiwan matches if found
+                if (matchedTaiwanCities.length > 0) {
+                    const twMapped = matchedTaiwanCities.map(tc => ({
+                        name: tc.name,
+                        latitude: tc.lat,
+                        longitude: tc.lon,
+                        country: '台灣 Taiwan',
+                        admin1: '台灣地區'
+                    }));
+                    results = [...twMapped, ...results.filter(r => !matchedTaiwanCities.some(tc => tc.enName.toLowerCase() === r.name.toLowerCase()))];
+                }
+
+                if (results.length > 0) {
+                    renderSearchResults(results);
+                } else {
+                    searchResultsEl.innerHTML = `<div class="p-3 text-xs text-slate-400 text-center">找不到「${query}」匹配的地區/城市</div>`;
+                    searchResultsEl.classList.remove('hidden');
+                }
+            } catch (err) {
+                console.error("Geocoding fetch error:", err);
+            }
+        }
+
+        function renderSearchResults(results) {
+            searchResultsEl.innerHTML = '';
+            results.forEach((place) => {
+                const div = document.createElement('div');
+                div.className = "p-3 hover:bg-slate-800 cursor-pointer text-xs text-slate-200 border-b border-slate-800/60 last:border-none flex justify-between items-center transition-colors";
+                
+                const countryText = place.country ? `, ${place.country}` : '';
+                const adminText = place.admin1 ? ` (${place.admin1})` : '';
+
+                div.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="map-pin" class="w-3.5 h-3.5 text-blue-400 shrink-0"></i>
+                        <span class="font-bold text-white">${place.name}</span>
+                        <span class="text-slate-400 text-[11px]">${adminText}${countryText}</span>
+                    </div>
+                    <span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded border border-slate-700">選擇</span>
+                `;
+
+                div.onclick = () => {
+                    selectLocation({
+                        lat: place.latitude,
+                        lon: place.longitude,
+                        name: `${place.name}${place.country ? ' ' + place.country : ''}`,
+                        cityName: place.name
+                    });
+                };
+
+                searchResultsEl.appendChild(div);
+            });
+            lucide.createIcons();
+            searchResultsEl.classList.remove('hidden');
+        }
+
+        function selectLocation(loc) {
+            currentLocation = loc;
+            document.getElementById('location-badge').textContent = "搜尋結果";
+            searchResultsEl.classList.add('hidden');
+            searchInput.value = loc.name;
+            renderTaiwanCityChips();
+            fetchWeatherData();
+        }
+
+        function handleSearch(e) {
+            e.preventDefault();
+            const query = searchInput.value.trim();
+            if (query) {
+                fetchGeocodingSuggestions(query);
+            }
+        }
+
+        // Close search results on outside click
+        document.addEventListener('click', (e) => {
+            if (!document.getElementById('search-form').contains(e.target) && !searchResultsEl.contains(e.target)) {
+                searchResultsEl.classList.add('hidden');
+            }
+        });
+
+        function useCurrentGPS() {
+            if ("geolocation" in navigator) {
+                document.getElementById('location-name').textContent = "GPS 定位中...";
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        currentLocation = {
+                            lat: position.coords.latitude,
+                            lon: position.coords.longitude,
+                            name: `GPS 經緯度 (${position.coords.latitude.toFixed(2)}, ${position.coords.longitude.toFixed(2)})`,
+                            cityName: 'Taiwan nature'
+                        };
+                        document.getElementById('location-badge').textContent = "GPS 定位";
+                        searchInput.value = '';
+                        renderTaiwanCityChips();
+                        fetchWeatherData();
+                    },
+                    (error) => {
+                        alert("無法取得 GPS 授權，已恢復為預設台北市。");
+                        currentLocation = { ...DEFAULT_LOCATION, name: '台北市 Taipei' };
+                        document.getElementById('location-badge').textContent = "預設台北";
+                        renderTaiwanCityChips();
+                        fetchWeatherData();
+                    }
+                );
+            } else {
+                alert("您的瀏覽器不支援 GPS 定位。");
+            }
+        }
+
+
+        // =========================================================
+        // LIVE CLOCK FUNCTIONALITY
+        // =========================================================
+        function updateClock() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            
+            document.getElementById('live-time').textContent = `${hours}:${minutes}:${seconds}`;
+
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const date = String(now.getDate()).padStart(2, '0');
+            const weekDays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+            const dayName = weekDays[now.getDay()];
+
+            document.getElementById('live-date').textContent = `${year} 年 ${month} 月 ${date} 日 ${dayName}`;
+        }
+
+
+        // =========================================================
+        // WEATHER LOGIC
+        // =========================================================
+        function initLocationAndWeather() {
+            renderTaiwanCityChips();
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        currentLocation = {
+                            lat: position.coords.latitude,
+                            lon: position.coords.longitude,
+                            name: `GPS 定位 (${position.coords.latitude.toFixed(2)}, ${position.coords.longitude.toFixed(2)})`,
+                            cityName: 'Taiwan nature'
+                        };
+                        document.getElementById('location-badge').textContent = "GPS 定位";
+                        fetchWeatherData();
+                    },
+                    (error) => {
+                        currentLocation = { ...DEFAULT_LOCATION, name: '台北市 Taipei' };
+                        document.getElementById('location-badge').textContent = "預設台北";
+                        fetchWeatherData();
+                    },
+                    { timeout: 6000 }
+                );
+            } else {
+                currentLocation = { ...DEFAULT_LOCATION, name: '台北市 Taipei' };
+                document.getElementById('location-badge').textContent = "預設台北";
+                fetchWeatherData();
+            }
+        }
+
+        async function fetchWeatherData() {
+            const loadingEl = document.getElementById('weather-loading');
+            const contentEl = document.getElementById('weather-content');
+            const errorEl = document.getElementById('weather-error');
+
+            loadingEl.classList.remove('hidden');
+            contentEl.classList.add('hidden');
+            errorEl.classList.add('hidden');
+
+            document.getElementById('location-name').textContent = currentLocation.name;
+
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${currentLocation.lat}&longitude=${currentLocation.lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability&daily=temperature_2m_max,temperature_2m_min&timezone=auto`;
+
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+                const data = await res.json();
+
+                renderWeather(data);
+                loadingEl.classList.add('hidden');
+                contentEl.classList.remove('hidden');
+            } catch (err) {
+                console.error("Weather fetch failed:", err);
+                loadingEl.classList.add('hidden');
+                document.getElementById('weather-error-msg').textContent = "天氣 API 暫時無法回應，請檢查網路連線。";
+                errorEl.classList.remove('hidden');
+            }
+        }
+
+        function renderWeather(data) {
+            const current = data.current;
+            const daily = data.daily;
+
+            // Temperature & Feels like
+            document.getElementById('current-temp').textContent = Math.round(current.temperature_2m);
+            document.getElementById('apparent-temp').textContent = Math.round(current.apparent_temperature);
+            document.getElementById('humidity').textContent = current.relative_humidity_2m;
+            document.getElementById('wind-speed').textContent = Math.round(current.wind_speed_10m);
+
+            // Precip Probability
+            const hourlyPrecip = data.hourly?.precipitation_probability || [];
+            const currentHourPrecip = hourlyPrecip.length > 0 ? hourlyPrecip[new Date().getHours()] || 0 : 0;
+            document.getElementById('precip-prob').textContent = currentHourPrecip;
+
+            // Daily Max / Min
+            document.getElementById('temp-max').textContent = Math.round(daily.temperature_2m_max[0]);
+            document.getElementById('temp-min').textContent = Math.round(daily.temperature_2m_min[0]);
+
+            // Weather Code Mapping
+            const codeInfo = WMO_CODES[current.weather_code] || { desc: '多雲時晴', icon: '⛅', keyword: 'landscape nature' };
+            document.getElementById('weather-icon').textContent = codeInfo.icon;
+            document.getElementById('weather-desc').textContent = codeInfo.desc;
+
+            // Update Dynamic Background
+            const bgSearchKeyword = currentLocation.cityName ? `${currentLocation.cityName} ${codeInfo.keyword}` : `${codeInfo.keyword}`;
+            updateLandscapeBackground(bgSearchKeyword);
+
+            // Render Chart
+            renderHourlyChart(data.hourly);
+        }
+
+        function renderHourlyChart(hourlyData) {
+            if (!hourlyData) return;
+
+            const ctx = document.getElementById('hourlyChart').getContext('2d');
+
+            const currentHour = new Date().getHours();
+            const labels = [];
+            const temps = [];
+            const precips = [];
+
+            for (let i = currentHour; i < currentHour + 24; i++) {
+                if (!hourlyData.time[i]) break;
+                const dateObj = new Date(hourlyData.time[i]);
+                labels.push(`${String(dateObj.getHours()).padStart(2, '0')}:00`);
+                temps.push(hourlyData.temperature_2m[i]);
+                precips.push(hourlyData.precipitation_probability ? hourlyData.precipitation_probability[i] : 0);
+            }
+
+            if (hourlyChartInstance) {
+                hourlyChartInstance.destroy();
+            }
+
+            hourlyChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '氣溫 (°C)',
+                            data: temps,
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                            fill: true,
+                            tension: 0.4,
+                            borderWidth: 3,
+                            pointBackgroundColor: '#60a5fa',
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '降雨率 (%)',
+                            data: precips,
+                            borderColor: '#c084fc',
+                            backgroundColor: 'transparent',
+                            borderDash: [4, 4],
+                            tension: 0.3,
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#cbd5e1', font: { size: 11 } }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                            titleColor: '#fff',
+                            bodyColor: '#cbd5e1',
+                            borderColor: 'rgba(255, 255, 255, 0.15)',
+                            borderWidth: 1
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#94a3b8', maxTicksLimit: 8 },
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            ticks: { color: '#cbd5e1' },
+                            grid: { color: 'rgba(255, 255, 255, 0.08)' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: false,
+                            position: 'right',
+                            min: 0,
+                            max: 100
+                        }
+                    }
+                }
+            });
+        }
+
+
+        // =========================================================
+        // THE CAT API GALLERY LOGIC
+        // =========================================================
+        async function fetchCatImage(resetTimer = false) {
+            if (resetTimer) {
+                resetCatAutoTimer();
+            }
+
+            const catImg = document.getElementById('cat-image');
+            const loadingEl = document.getElementById('cat-loading');
+            const errorEl = document.getElementById('cat-error');
+
+            loadingEl.classList.remove('hidden');
+            errorEl.classList.add('hidden');
+            catImg.classList.add('opacity-0');
+
+            try {
+                const res = await fetch('https://api.thecatapi.com/v1/images/search?has_breeds=1');
+                let data = await res.json();
+                
+                if (!data || data.length === 0) {
+                    const fallbackRes = await fetch('https://api.thecatapi.com/v1/images/search');
+                    data = await fallbackRes.json();
+                }
+
+                if (data && data[0] && data[0].url) {
+                    const catObj = data[0];
+                    currentCatUrl = catObj.url;
+                    catImg.src = catObj.url;
+
+                    const breedTag = document.getElementById('cat-breed-tag');
+                    const infoBox = document.getElementById('cat-info');
+
+                    if (catObj.breeds && catObj.breeds.length > 0) {
+                        const breed = catObj.breeds[0];
+                        breedTag.innerHTML = `🐾 ${breed.name}`;
+                        infoBox.innerHTML = `
+                            <div>
+                                <p class="font-bold text-slate-200 text-sm mb-0.5">${breed.name} (${breed.origin || '未知品種'})</p>
+                                <p class="text-slate-400 line-clamp-2">${breed.description || breed.temperament || '無額外描述'}</p>
+                            </div>
+                        `;
+                    } else {
+                        breedTag.innerHTML = `🐾 可愛喵星人`;
+                        infoBox.innerHTML = `<p class="italic text-slate-400">這隻貓貓沒有登記特定品種，但依然超可愛！🐱</p>`;
+                    }
+
+                    const likeBtn = document.getElementById('like-btn');
+                    likeBtn.classList.remove('bg-pink-500', 'text-white');
+                    likeBtn.classList.add('bg-black/70');
+                } else {
+                    throw new Error("No cat image returned");
+                }
+            } catch (err) {
+                console.error("Cat API fetch failed:", err);
+                loadingEl.classList.add('hidden');
+                errorEl.classList.remove('hidden');
+            }
+        }
+
+        function onCatImageLoaded() {
+            document.getElementById('cat-loading').classList.add('hidden');
+            document.getElementById('cat-image').classList.remove('opacity-0');
+            document.getElementById('download-cat-btn').href = currentCatUrl;
+        }
+
+        function onCatImageError() {
+            document.getElementById('cat-loading').classList.add('hidden');
+            document.getElementById('cat-error').classList.remove('hidden');
+        }
+
+        function toggleLikeCat() {
+            const likeBtn = document.getElementById('like-btn');
+            if (likeBtn.classList.contains('bg-pink-500')) {
+                likeBtn.classList.remove('bg-pink-500');
+                likeBtn.classList.add('bg-black/70');
+            } else {
+                likeBtn.classList.remove('bg-black/70');
+                likeBtn.classList.add('bg-pink-500');
+            }
+        }
+
+        function resetCatAutoTimer() {
+            clearInterval(catProgressInterval);
+            catProgressSeconds = 0;
+            updateCatProgressBar();
+
+            catProgressInterval = setInterval(() => {
+                catProgressSeconds++;
+                updateCatProgressBar();
+
+                if (catProgressSeconds >= CAT_REFRESH_SECONDS) {
+                    fetchCatImage(false);
+                    catProgressSeconds = 0;
+                }
+            }, 1000);
+        }
+
+        function updateCatProgressBar() {
+            const percentage = (catProgressSeconds / CAT_REFRESH_SECONDS) * 100;
+            document.getElementById('cat-progress').style.width = `${percentage}%`;
+        }
+
+
+        // =========================================================
+        // INITIALIZATION
+        // =========================================================
+        window.onload = function () {
+            lucide.createIcons();
+
+            updateClock();
+            setInterval(updateClock, 1000);
+
+            initLocationAndWeather();
+
+            fetchCatImage(true);
+
+            setInterval(fetchWeatherData, 15 * 60 * 1000);
+        };
+    </script>
+</body>
+</html>
